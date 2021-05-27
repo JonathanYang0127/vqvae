@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 from torch.utils.data import Dataset
 
-
 class BlockDataset(Dataset):
     """
     Creates block dataset of 32X32 images with 3 channels
@@ -54,3 +53,5 @@ class LatentBlockDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
