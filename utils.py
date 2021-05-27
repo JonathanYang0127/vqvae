@@ -74,8 +74,8 @@ def load_widowx():
 
     expl_env = roboverse.make(variant['env'], transpose_image=True)
     replay_buffer = load_data_from_npy(variant, expl_env, ['image'])
-    train = WidowXDataset(replay_buffer, train=True, normalize=True)
-    val = WidowXDataset(replay_buffer, train=False, normalize=True)
+    train = WidowXDataset(replay_buffer, train=True, normalize=True, image_dims=(48, 48, 3))
+    val = WidowXDataset(replay_buffer, train=False, normalize=True, image_dims=(48, 48, 3))
 
     return train, val
 
@@ -84,23 +84,24 @@ def load_widowx_real_robot():
     Loads sim datasets (uses rlkit from railrl-private)
     '''
     from rlkit.data_management.obs_dict_replay_buffer import ObsDictReplayBuffer
-    from rlkit.misc.wx250_utils import add_data_to_buffer_real_robot
+    from rlkit.misc.wx250_utils import add_data_to_buffer_real_robot, DummyEnv
 
+    image_size = 64
+    expl_env = DummyEnv(image_size=image_size)
     data_folder_path = '/nfs/kun1/users/albert/realrobot_datasets'
     data_file_path = data_folder_path + '/combined_2021-05-20_21_53_31.pkl'
 
     replay_buffer = ObsDictReplayBuffer(
         int(1E6),
         expl_env,
-        observation_keys=observation_keys
+        observation_keys=['image']
     )
     add_data_to_buffer_real_robot(data_file_path, replay_buffer,
                        validation_replay_buffer=None,
                        validation_fraction=0.8)
 
-
-    train = WidowXDataset(replay_buffer, train=True, normalize=False)
-    val = WidowXDataset(replay_buffer, train=False, normalize=False)
+    train = WidowXDataset(replay_buffer, train=True, normalize=False, image_dims=(64, 64, 3))
+    val = WidowXDataset(replay_buffer, train=False, normalize=False, image_dims=(64, 64, 3))
 
     return train, val
 
