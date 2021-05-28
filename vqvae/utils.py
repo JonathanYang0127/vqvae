@@ -4,8 +4,8 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import time
 import os
-from datasets.block import BlockDataset, LatentBlockDataset
-from datasets.widowx import WidowXDataset
+from vqvae.datasets.block import BlockDataset, LatentBlockDataset
+from vqvae.datasets.widowx import WidowXDataset
 import numpy as np
 
 

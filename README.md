@@ -1,3 +1,6 @@
+Note: you may have to use if it isn't installed
+conda install -c intel mkl_fft
+
 # Vector Quantized Variational Autoencoder
 
 This is a PyTorch implementation of the vector quantized variational autoencoder (https://arxiv.org/abs/1711.00937). 

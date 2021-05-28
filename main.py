@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import argparse
-import utils
-from models.vqvae import VQVAE
+from vqvae import utils
+from vqvae.models.vqvae import VQVAE
 
 parser = argparse.ArgumentParser()
 
