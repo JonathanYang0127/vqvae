@@ -23,7 +23,7 @@ parser.add_argument("--n_embeddings", type=int, default=512)
 parser.add_argument("--beta", type=float, default=.25)
 parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--log_interval", type=int, default=50)
-parser.add_argument("--dataset",  type=str, default='WIDOWX')
+parser.add_argument("--dataset",  type=str, default='ROBOMIMIC')
 
 # whether or not to save model
 parser.add_argument("-save", action="store_true")

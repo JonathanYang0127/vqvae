@@ -5,8 +5,17 @@ from torch.utils.data import DataLoader
 import time
 import os
 from vqvae.datasets.block import BlockDataset, LatentBlockDataset
-from vqvae.datasets.widowx import WidowXDataset
 import numpy as np
+
+def load_robomimic():
+    from vqvae.datasets.robomimic import (RobomimicDataset, 
+        RobomimicDataloader, DatasetConfig)
+    cfg = DatasetConfig(path='/iris/u/jyang27/dev/vqvae/data/square/processed_data96.hdf5')
+    dataset = RobomimicDataset(cfg)
+    train = RobomimicDataloader(dataset, train=True) 
+    val = RobomimicDataloader(dataset, train=False)
+
+    return train, val
 
 
 def load_cifar():
@@ -63,6 +72,7 @@ def load_widowx():
     Loads sim datasets (uses rlkit from cql-private)
     '''
     from rlkit.data_management.load_buffer import load_data_from_npy
+    from vqvae.datasets.widowx import WidowXDataset
     import roboverse
 
     data_folder_path = '/home/jonathanyang0127/minibullet/data'
@@ -85,6 +95,7 @@ def load_widowx_real_robot():
     '''
     from rlkit.data_management.obs_dict_replay_buffer import ObsDictReplayBuffer
     from rlkit.misc.wx250_utils import add_data_to_buffer_real_robot, DummyEnv
+    from vqvae.datasets.widowx import WidowXDataset
 
     image_size = 64
     expl_env = DummyEnv(image_size=image_size)
@@ -128,7 +139,6 @@ def load_data_and_data_loaders(dataset, batch_size):
         print(training_data.data.shape)
         print(next(iter(training_loader))[0].shape)
         x_train_var = np.var(training_data.data / 255.0)
-
     elif dataset == 'BLOCK':
         training_data, validation_data = load_block()
         training_loader, validation_loader = data_loaders(
@@ -154,7 +164,11 @@ def load_data_and_data_loaders(dataset, batch_size):
         training_loader, validation_loader = data_loaders(
             training_data, validation_data, batch_size)
         x_train_var = np.var(training_data.data)
-
+    elif dataset == 'ROBOMIMIC':
+        training_data, validation_data = load_robomimic()
+        training_loader, validation_loader = data_loaders(
+            training_data, validation_data, batch_size)
+        x_train_var = np.var(training_data.data)
     else:
         raise ValueError(
             'Invalid dataset: only CIFAR10 and BLOCK datasets are supported.')
