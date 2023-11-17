@@ -176,13 +176,21 @@ class RobomimicDataset:
         return self._convert_to_batch(samples, device)
 
 class RobomimicDataloader():
-    def __init__(self, dataset, train):
+    def __init__(self, dataset, train, context_length=0):
         self.data = []
         obs_key = dataset.cfg.rl_camera
         for d in dataset:
-            for step in d:            
-                self.data.append(np.expand_dims(step[obs_key].float().numpy() 
-                    / 255.0, 0))
+            context = [np.expand_dims(d[0][obs_key].float().numpy()
+                            / 255.0, 0) for _ in range(context_length + 1)]
+            for step in d:           
+                if context_length > 0:
+                    context = context[1:] + [np.expand_dims(step[obs_key].float().numpy()
+                        / 255.0, 0)]
+                    self.data.append(np.expand_dims(np.concatenate(context), 0))
+                else:
+                    self.data.append(np.expand_dims(step[obs_key].float().numpy()
+                        / 255.0, 0))
+                
         self.data = np.concatenate(self.data)
         size = len(dataset.idx2entry)
         if train:
@@ -201,5 +209,5 @@ class RobomimicDataloader():
 if __name__ == '__main__':
     cfg = DatasetConfig(path='/iris/u/jyang27/dev/vqvae/data/square/processed_data96.hdf5')
     dataset = RobomimicDataset(cfg)
-    dataloader = RobomimicDataloader(dataset)
+    dataloader = RobomimicDataloader(dataset, True, 1)
 
