@@ -9,7 +9,7 @@ import json
 @dataclass
 class DatasetConfig:
     path: str
-    rl_camera: str = "robot0_eye_in_hand"
+    rl_camera: str = "agentview"#:"robot0_eye_in_hand"
     num_data: int = -1
     max_len: int = -1
     eval_episode_len: int = 300
@@ -175,14 +175,15 @@ class RobomimicDataset:
 
         return self._convert_to_batch(samples, device)
 
+
 class RobomimicDataloader():
     def __init__(self, dataset, train, context_length=0, step_size=1):
         self.data = []
         obs_key = dataset.cfg.rl_camera
-        for d in dataset:
+        for data in dataset:
             for i in range(step_size):
-                d = d[i:len(d):step_size]
-                pad = [d[0] for _ in range(context_length + 1)]
+                d = data[i:len(data):step_size]
+                pad = [d[0] for _ in range(context_length)]
                 d = pad + d
 
                 for i in range(context_length, len(d)):
@@ -209,6 +210,54 @@ class RobomimicDataloader():
 
     def __len__(self):
         return len(self.data)
+
+
+class RobomimicObsActionDataloader():
+    def __init__(self, dataset, train, context_length=0, step_size=1):
+        self.images = []
+        self.actions = []
+        obs_key = dataset.cfg.rl_camera
+        for data in dataset:
+            for i in range(step_size):
+                d = data[i:len(data):step_size]
+                pad = [d[0] for _ in range(context_length)]
+                d = pad + d
+
+                for i in range(context_length, len(d)):
+                    if context_length > 0:
+                        context = [np.expand_dims(d[j][obs_key].float().numpy()/ 255.0, 0)
+                            for j in range(i - context_length, i + 1)]
+                        actions = [np.expand_dims(d[j]['action'], 0)
+                            for j in range(i - context_length, i + 1)]
+                        self.images.append(np.expand_dims(np.concatenate(actions), 0))
+                        
+                    else:
+                        step = d[i]
+                        self.images.append(np.expand_dims(step[obs_key].float().numpy()
+                            / 255.0, 0))
+                        self.actions.append(np.expand_dims(step['action'], 0))
+
+        self.images = np.concatenate(self.images)
+        self.actions = np.concatenate(self.actions)
+        size = len(dataset.idx2entry)
+        if train:
+            self.images = self.images[:int(0.95 * float(size))]
+            self.actions = self.actions[:int(0.95 * float(size))]
+        else:
+            self.images = self.images[int(0.95 * float(size)):]
+            self.actions = self.actions[int(0.95 * float(size)):]
+
+    def __getitem__(self, index):
+        img = self.images[index]
+        action = self.actions[index]
+        output = {'image': img,
+                'action': action}
+        label = 0
+        return output, label
+
+    def __len__(self):
+        return len(self.images)
+
 
 if __name__ == '__main__':
     cfg = DatasetConfig(path='/iris/u/jyang27/dev/vqvae/data/square/processed_data96.hdf5')

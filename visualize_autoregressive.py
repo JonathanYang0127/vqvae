@@ -26,6 +26,10 @@ nhead = 8     # Number of attention heads
 num_layers = 6  # Number of decoder layers
 dim_feedforward = 2048  # Feedforward dimension
 
+seq_len = 5
+step_size = 5
+batch_size = 8
+
 
 class AutoRegressiveModel(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward, num_layers, 
@@ -58,8 +62,7 @@ class AutoRegressiveModel(nn.Module):
 
 
 # Create the decoder
-seq_len = 5
-MODEL_PATH = 'out_autoregressive.pt'
+MODEL_PATH = f'out_autoregressive_seq_{seq_len}_step_{step_size}.pt'
 model = torch.load(MODEL_PATH).eval().cuda()
 
 def data_loaders(train_data, val_data, batch_size):
@@ -78,51 +81,65 @@ def data_loaders(train_data, val_data, batch_size):
 cfg = DatasetConfig(path=DATA_PATH)
 dataset = RobomimicDataset(cfg)
 training_data = RobomimicDataloader(dataset, train=True, 
-    context_length=seq_len-1, step_size=5)
+    context_length=seq_len-1, step_size=step_size)
 validation_data = RobomimicDataloader(dataset, train=False,
-    context_length=seq_len-1, step_size=5)
-batch_size = 8
+    context_length=seq_len-1, step_size=step_size)
 train_loader, val_loader = data_loaders(
     training_data, validation_data, batch_size)
 
 with torch.no_grad():
-    for step, (img, idx) in enumerate(train_loader):
+    for step, (image, idx) in enumerate(train_loader):
+        print(step)
         if step >= 10:
             break
-        img = img.cuda()
-        bsz, context, *image_dim  = img.shape
-        img = img.view(bsz*context, *image_dim)
-        z_e = network.encoder(img)
-        z_e = network.pre_quantization_conv(z_e)
-        embedding_loss, z_q, perplexity, _, min_encoding_indices = network.vector_quantization(
-            z_e)
-        embedding_idx = min_encoding_indices.view(bsz, context, -1)
-        embedding_idx = embedding_idx.permute(1, 0, 2).contiguous()
-        z_q = z_q.view(bsz, context, embedding_dim, 24, 24) 
-        z_q = z_q.permute(1, 0, 3, 4, 2).contiguous()
-        targets = model.fc_in(z_q)
-        targets = targets.view(context, bsz * 576, -1)
+        for j in range(seq_len):
+            img = image.cuda()
+            bsz, context, *image_dim  = img.shape
+            img = img.view(bsz*context, *image_dim)
+            z_e = network.encoder(img)
+            z_e = network.pre_quantization_conv(z_e)
+            embedding_loss, z_q, perplexity, _, min_encoding_indices = network.vector_quantization(
+                z_e)
+            embedding_idx = min_encoding_indices.view(bsz, context, -1)
+            embedding_idx = embedding_idx.permute(1, 0, 2).contiguous()
+            z_q = z_q.view(bsz, context, embedding_dim, 24, 24) 
+            z_q = z_q.permute(1, 0, 3, 4, 2).contiguous()
+            targets = model.fc_in(z_q)
+            targets = targets.view(context, bsz * 576, -1)
     
-        #Add start embedding
-        start_token = torch.zeros(targets.shape[1:]).unsqueeze(0).cuda()
-        targets = torch.cat((start_token, targets[:-1]), dim=0)
-        memory = torch.zeros(*targets.shape).cuda()
-        out = model(targets, memory)
+            #Add start embedding
+            start_token = torch.zeros(targets.shape[1:]).unsqueeze(0).cuda()
+            targets = torch.cat((start_token, targets[:-1]), dim=0)
+            memory = torch.zeros(*targets.shape).cuda()
+            out = model(targets, memory)
    
-        out = out.view(seq_len, bsz*576, -1)
-        out = out[-1]
-        out_idxs = torch.argmax(out, dim=-1, keepdim=True)
-        z_q = network.vector_quantization.recover_embeddings(out_idxs)
-        x_hat = network.decoder(z_q)
-        x_hat = x_hat.permute(0, 2, 3, 1)[0].detach().cpu().numpy()
+            out = out.view(seq_len, bsz*576, -1)
+            out = out[j]
+            out_idxs = torch.argmax(out, dim=-1, keepdim=True)
+            z_q = network.vector_quantization.recover_embeddings(out_idxs)
+            x_hat = network.decoder(z_q)
+
+            x_hat = x_hat.detach().cpu()
+            for k in range(bsz):
+                image[k][j] = x_hat[k]
+            #x_hat = x_hat.permute(0, 2, 3, 1)[0].detach().cpu().numpy()
    
-        img = img.view(bsz, context, *image_dim)
-        img = img.permute(0, 1, 3, 4, 2) 
-        img = img.detach().cpu().numpy()
-        fig, ax = plt.subplots(1, seq_len)
-        for i in range(seq_len - 1):
-            ax[i].imshow((img[0][i] * 255.0).astype(np.uint8))
-        ax[seq_len-1].imshow((x_hat* 255.0).astype(np.uint8))
+        img = image.view(bsz, context, *image_dim)
+        img = img.permute(0, 1, 3, 4, 2).detach().numpy()
+
+        rc = {"axes.spines.left" : False,
+            "axes.spines.right" : False,
+            "axes.spines.bottom" : False,
+            "axes.spines.top" : False,
+            "xtick.bottom" : False,
+            "xtick.labelbottom" : False,
+            "ytick.labelleft" : False,
+            "ytick.left" : False}
+        plt.rcParams.update(rc)
+        for i in range(seq_len):
+            plt.imshow((img[0][i] * 255.0).astype(np.uint8))
+            plt.savefig(f'predictions/prediction_{step}_{i}.png')
         plt.savefig(f'predictions/prediction_{step}.png')    
-        
+        plt.savefig(f'predictions/prediction_{step}_{i}.png')
+
 

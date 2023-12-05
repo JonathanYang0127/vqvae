@@ -30,6 +30,10 @@ nhead = 8     # Number of attention heads
 num_layers = 6  # Number of decoder layers
 dim_feedforward = 2048  # Feedforward dimension
 
+seq_len = 5
+step_size = 5
+batch_size = 8
+
 logger = wandb.init(
     name='vqvae_autoregressive',
 )
@@ -66,7 +70,6 @@ class AutoRegressiveModel(nn.Module):
 
 
 # Create the decoder
-seq_len = 5
 model = AutoRegressiveModel(d_model, nhead, dim_feedforward, num_layers,
             embedding_dim, n_codes, seq_len).cuda()
 
@@ -86,48 +89,47 @@ def data_loaders(train_data, val_data, batch_size):
                             pin_memory=True)
     return train_loader, val_loader
 
-
 cfg = DatasetConfig(path=DATA_PATH)
 dataset = RobomimicDataset(cfg)
 training_data = RobomimicDataloader(dataset, train=True, 
-    context_length=seq_len-1, step_size=5)
+    context_length=seq_len-1, step_size=step_size)
 validation_data = RobomimicDataloader(dataset, train=False)
-batch_size = 8
 train_loader, val_loader = data_loaders(
     training_data, validation_data, batch_size)
 
-for step, (img, idx) in enumerate(train_loader):
-    img = img.cuda()
-    bsz, context, *image_dim  = img.shape
-    img = img.view(bsz*context, *image_dim)
-    z_e = network.encoder(img)
-    z_e = network.pre_quantization_conv(z_e)
-    embedding_loss, z_q, perplexity, _, min_encoding_indices = network.vector_quantization(
-        z_e)
-    embedding_idx = min_encoding_indices.view(bsz, context, -1)
-    embedding_idx = embedding_idx.permute(1, 0, 2).contiguous()
-    z_q = z_q.view(bsz, context, embedding_dim, 24, 24)
-    z_q = z_q.permute(1, 0, 3, 4, 2).contiguous()
-    targets = model.fc_in(z_q)
-    targets = targets.view(context, bsz * 576, -1)
+for epoch in range(5):
+    for step, (img, idx) in enumerate(train_loader):
+        img = img.cuda()
+        bsz, context, *image_dim  = img.shape
+        img = img.view(bsz*context, *image_dim)
+        z_e = network.encoder(img)
+        z_e = network.pre_quantization_conv(z_e)
+        embedding_loss, z_q, perplexity, _, min_encoding_indices = network.vector_quantization(
+            z_e)
+        embedding_idx = min_encoding_indices.view(bsz, context, -1)
+        embedding_idx = embedding_idx.permute(1, 0, 2).contiguous()
+        z_q = z_q.view(bsz, context, embedding_dim, 24, 24)
+        z_q = z_q.permute(1, 0, 3, 4, 2).contiguous()
+        targets = model.fc_in(z_q)
+        targets = targets.view(context, bsz * 576, -1)
 
-    #Add start embedding
-    start_token = torch.zeros(targets.shape[1:]).unsqueeze(0).cuda()
-    targets = torch.cat((start_token, targets[:-1]), dim=0)
-    memory = torch.zeros(*targets.shape).cuda()
-    out = model(targets, memory)
+        #Add start embedding
+        start_token = torch.zeros(targets.shape[1:]).unsqueeze(0).cuda()
+        targets = torch.cat((start_token, targets[:-1]), dim=0)
+        memory = torch.zeros(*targets.shape).cuda()
+        out = model(targets, memory)
 
-    label = embedding_idx.view(-1)
-    out = out.view(label.shape[0], -1)
-    loss = F.cross_entropy(out, label, reduction='none').mean()
+        label = embedding_idx.view(-1)
+        out = out.view(label.shape[0], -1)
+        loss = F.cross_entropy(out, label, reduction='none').mean()
 
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-    logger.log(data={'Train Cross Entropy': loss}, step=step)
+        logger.log(data={'Train Cross Entropy': loss}, step=step)
 
-    if step % 100 == 0:
-        torch.save(model, 'out_autoregressive.pt')
+        if step % 100 == 0:
+            torch.save(model, f'out_autoregressive_seq_{seq_len}_step_{step_size}.pt')
 
 
