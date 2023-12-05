@@ -24,6 +24,7 @@ parser.add_argument("--beta", type=float, default=.25)
 parser.add_argument("--learning_rate", type=float, default=1e-3)
 parser.add_argument("--log_interval", type=int, default=50)
 parser.add_argument("--dataset",  type=str, default='ROBOMIMIC')
+parser.add_argument('--checkpoint', type=str, default=None)
 
 # whether or not to save model
 parser.add_argument("-save", action="store_true")
@@ -48,6 +49,8 @@ Set up VQ-VAE model with components defined in ./models/ folder
 
 model = VQVAE(args.n_hiddens, args.n_residual_hiddens,
               args.n_residual_layers, args.n_embeddings, args.embedding_dim, args.beta).to(device)
+if args.checkpoint is not None:
+    model = torch.load(args.checkpoint)
 
 """
 Set up optimizer and training loop
@@ -97,6 +100,38 @@ def train():
                   'Loss', np.mean(results["loss_vals"][-args.log_interval:]),
                   'Perplexity:', np.mean(results["perplexities"][-args.log_interval:]))
 
+def validate():
+
+    for i in range(args.n_updates):
+        (x, _) = next(iter(validation_loader))
+        x = x.to(device)
+        optimizer.zero_grad()
+
+        embedding_loss, x_hat, perplexity = model(x)
+        recon_loss = torch.mean((x_hat - x)**2) / x_train_var
+        loss = recon_loss + embedding_loss
+
+
+        results["recon_errors"].append(recon_loss.cpu().detach().numpy())
+        results["perplexities"].append(perplexity.cpu().detach().numpy())
+        results["loss_vals"].append(loss.cpu().detach().numpy())
+        results["n_updates"] = i
+
+        if i % args.log_interval == 0:
+            """
+            save model and print values
+            """
+            if args.save:
+                hyperparameters = args.__dict__
+                utils.save_model_full(
+                    model, args.filename)
+
+            print('Update #', i, 'Recon Error:',
+                  np.mean(results["recon_errors"][-args.log_interval:]),
+                  'Loss', np.mean(results["loss_vals"][-args.log_interval:]),
+                  'Perplexity:', np.mean(results["perplexities"][-args.log_interval:]))
+
 
 if __name__ == "__main__":
-    train()
+    #train()
+    validate()

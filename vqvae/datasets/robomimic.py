@@ -176,20 +176,24 @@ class RobomimicDataset:
         return self._convert_to_batch(samples, device)
 
 class RobomimicDataloader():
-    def __init__(self, dataset, train, context_length=0):
+    def __init__(self, dataset, train, context_length=0, step_size=1):
         self.data = []
         obs_key = dataset.cfg.rl_camera
         for d in dataset:
-            context = [np.expand_dims(d[0][obs_key].float().numpy()
-                            / 255.0, 0) for _ in range(context_length + 1)]
-            for step in d:           
-                if context_length > 0:
-                    context = context[1:] + [np.expand_dims(step[obs_key].float().numpy()
-                        / 255.0, 0)]
-                    self.data.append(np.expand_dims(np.concatenate(context), 0))
-                else:
-                    self.data.append(np.expand_dims(step[obs_key].float().numpy()
-                        / 255.0, 0))
+            for i in range(step_size):
+                d = d[i:len(d):step_size]
+                pad = [d[0] for _ in range(context_length + 1)]
+                d = pad + d
+
+                for i in range(context_length, len(d)):
+                    if context_length > 0:
+                        context = [np.expand_dims(d[j][obs_key].float().numpy()/ 255.0, 0)
+                            for j in range(i - context_length, i + 1)]
+                        self.data.append(np.expand_dims(np.concatenate(context), 0))
+                    else:
+                        step = d[i]
+                        self.data.append(np.expand_dims(step[obs_key].float().numpy()
+                            / 255.0, 0))
                 
         self.data = np.concatenate(self.data)
         size = len(dataset.idx2entry)

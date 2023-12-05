@@ -74,3 +74,18 @@ class VectorQuantizer(nn.Module):
         z_q = z_q.permute(0, 3, 1, 2).contiguous()
 
         return loss, z_q, perplexity, min_encodings, min_encoding_indices
+
+    def recover_embeddings(self, min_encoding_indices):
+        min_encodings = torch.zeros(
+        min_encoding_indices.shape[0], self.n_e).to(device)
+        min_encodings.scatter_(1, min_encoding_indices, 1)
+
+        # get quantized latent vectors
+        z_q = torch.matmul(min_encodings, self.embedding.weight).view(-1, 24, 24, 5)
+
+        # reshape back to match original input shape
+        z_q = z_q.permute(0, 3, 1, 2).contiguous()
+
+        return z_q
+
+

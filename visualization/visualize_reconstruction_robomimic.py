@@ -22,9 +22,9 @@ img = img.cuda().unsqueeze(0)
 network = torch.load(args.vqvae)
 z_e = network.encoder(img)
 z_e = network.pre_quantization_conv(z_e)
-embedding_loss, z_q, perplexity, _, min_encoding_indices = network.vector_quantization(
+embedding_loss, z_q, perplexity, min_encodings, min_encoding_indices = network.vector_quantization(
     z_e)
-
+import pdb; pdb.set_trace()
 _, xhat, _ = network(img)
 
 img = img.cpu().numpy() * 255.0
