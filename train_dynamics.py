@@ -18,23 +18,51 @@ nhead = 8     # Number of attention heads
 num_layers = 6  # Number of decoder layers
 dim_feedforward = 2048  # Feedforward dimension
 
+class RandomShiftsAug:
+    def __init__(self, pad):
+        self.pad = pad
+
+    def __call__(self, x):
+        n, c, h, w = x.size()
+        assert h == w
+        padding = tuple([self.pad] * 4)
+        x = nn.functional.pad(x, padding, "replicate")
+        eps = 1.0 / (h + 2 * self.pad)
+        arange = torch.linspace(
+            -1.0 + eps, 1.0 - eps, h + 2 * self.pad, device=x.device, dtype=x.dtype
+        )[:h]
+        arange = arange.unsqueeze(0).repeat(h, 1).unsqueeze(2)
+        base_grid = torch.cat([arange, arange.transpose(1, 0)], dim=2)
+        base_grid = base_grid.unsqueeze(0).repeat(n, 1, 1, 1)
+
+        shift = torch.randint(
+            0, 2 * self.pad + 1, size=(n, 1, 1, 2), device=x.device, dtype=x.dtype
+        )
+        shift *= 2.0 / (h + 2 * self.pad)
+
+        grid = base_grid + shift
+        return nn.functional.grid_sample(x, grid, padding_mode="zeros", align_corners=False)
 
 class ConvInverseDynamicsModel(nn.Module):
     def __init__(self, numChannels):   
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels=numChannels, out_channels=20,
-            kernel_size=(3, 3))
+            kernel_size=(3, 3), stride=2)
         self.relu1 = nn.ReLU()
         self.maxpool1 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.conv2 = nn.Conv2d(in_channels=20, out_channels=50,
+        self.conv2 = nn.Conv2d(in_channels=20, out_channels=20,
             kernel_size=(3, 3))
         self.relu2 = nn.ReLU()
         self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.fc1 = nn.Linear(in_features=800, out_features=500)
+        self.fc1 = nn.Linear(in_features=2000, out_features=500)
         self.relu3 = nn.ReLU()
-        self.fc2 = nn.Linear(in_features=500, out_features=7)
+        self.fc2 = nn.Linear(in_features=500, out_features=500)
+        self.relu4 = nn.ReLU()
+        self.fc3 = nn.Linear(in_features=500, out_features=7)
+        self.aug = RandomShiftsAug(4)
 
     def forward(self, x):
+        x = self.aug(x)
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.maxpool1(x)
@@ -45,6 +73,8 @@ class ConvInverseDynamicsModel(nn.Module):
         x = self.fc1(x)
         x = self.relu3(x)
         x = self.fc2(x)
+        x = self.relu4(x)
+        x = self.fc3(x)
         return x
 
 class PredictionInverseDynamicsModel(nn.Module):
@@ -60,13 +90,13 @@ class PredictionInverseDynamicsModel(nn.Module):
         self.seq_len = 2
 
         self.inverse_dynamics = ConvInverseDynamicsModel(
-            2*self.embedding_dim).to(self.device)
+            6).to(self.device)
 
     def forward(self, img):
         #Image is batch, c, h, w
         with torch.no_grad():
             curr_embed, next_embed = self.get_current_and_next_embeddings(img)
-    
+
         #Fuse embeddings along channel
         fusion = torch.cat((curr_embed, next_embed), dim=1)
 
@@ -76,6 +106,7 @@ class PredictionInverseDynamicsModel(nn.Module):
 
     def get_current_and_next_embeddings(self, img):
         #Add context dim
+        original_image = img
         img = img.unsqueeze(1)
 
         #Encode Image
@@ -106,9 +137,12 @@ class PredictionInverseDynamicsModel(nn.Module):
 
         #Recover next embedding
         next_z_q = self.vqvae_encoder.vector_quantization.recover_embeddings(out_idxs)
- 
-        return curr_z_q, next_z_q
-
+        next_xhat = self.vqvae_encoder.decoder(next_z_q)
+        curr_xhat =  self.vqvae_encoder.decoder(curr_z_q) 
+        plt.imshow((next_xhat[0]* 255.0).cpu().numpy().transpose(1, 2, 0).astype(np.uint8))
+        plt.savefig('train_image.png')
+        #return curr_z_q, next_z_q
+        return original_image, next_xhat
 
 class AutoRegressiveModel(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward, num_layers, 
@@ -164,12 +198,14 @@ train_loader, val_loader = data_loaders(
     training_data, validation_data, batch_size)
 
 #Create model
+#path = 'out_inverse_dynamics.pt'
+#model = torch.load(path)
 model = PredictionInverseDynamicsModel('vqvae_data_agentview.pth', 
     'out_autoregressive_seq_2_step_1.pt')
 
 #Configure optimizer
 optimizer = torch.optim.Adam(model.parameters(),
-    lr=1e-4, amsgrad=True)
+    lr=2e-4)
 
 
 for epoch in range(20): 
@@ -179,7 +215,6 @@ for epoch in range(20):
         img = img.cuda()
         action = action.cuda()
         out = model(img)
-
         loss = F.mse_loss(out, action, reduction='none').mean()
 
         optimizer.zero_grad()
